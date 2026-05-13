@@ -87,7 +87,7 @@ return [
 | cache.ratelimit    | `true`  | seperate cache for ratelimit, expires at `ratelimit.expire`                                |
 | cache.queries      | `true`  | seperate cache for most queries used in panel, flushes automatically with each event tracked |
 | ipstack.access_key | `null`  | string. access key                                                                         |
-| ipstack.https      | `false` | boolean. if `true` will use premium https endpoint.                                        |
+| ipstack.allowInsecureHttp | `false` | boolean. if `true`, ipstack lookups use cleartext HTTP. Keep disabled unless your account cannot use HTTPS. |
 | ipstack.expire     | `60*24` | int. cache in minutes for ipstack IP resolution.                                           |
 | sqlite.file        | `fn()`  | path to sqlite file. like site/logs                                                        |
 | stats.range        | `30`    | int. half of range of days for bar and change percentage                                   |
@@ -110,4 +110,3 @@ This plugin is provided "as is" with no guarantee. Use it at your own risk and a
 [MIT](https://opensource.org/licenses/MIT)
 
 It is discouraged to use this plugin in any project that promotes racism, sexism, homophobia, animal abuse, violence or any other form of hate speech.
-

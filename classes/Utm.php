@@ -27,11 +27,11 @@ final class Utm
             'file' => option('bnomei.utm.sqlite.file'),
             'ip' => null, // INTERNAL: only used in testing via $options overwrite
             'ipstack_access_key' => option('bnomei.utm.ipstack.access_key'),
-            'ipstack_https' => option('bnomei.utm.ipstack.https') ? 'https' : 'http',
+            'ipstack_allow_insecure_http' => option('bnomei.utm.ipstack.allowInsecureHttp'),
             'ipstack_expire' => option('bnomei.utm.ipstack.expire'),
             'stats_range' => option('bnomei.utm.stats.range'),
             'ratelimit_enabled' => option('bnomei.utm.ratelimit.enabled'),
-            'ratelimit_expire' => option('bnomei.utm.ratelimit.duration'),
+            'ratelimit_expire' => option('bnomei.utm.ratelimit.expire', option('bnomei.utm.ratelimit.duration', 60)),
             'ratelimit_trials' => option('bnomei.utm.ratelimit.trials'),
             'CrawlerDetect' => option('bnomei.utm.botDetection.CrawlerDetect'),
             'DeviceDetector' => option('bnomei.utm.botDetection.DeviceDetector'),
@@ -153,7 +153,14 @@ final class Utm
         $city = A::get($params, 'city', '');
         $useragent = A::get($params, 'useragent', '');
 
-        $this->database()->query("INSERT INTO utm (page_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, visited_at, iphash, country_name, city, user_agent) VALUES ('$id', '$utm_source', '$utm_medium', '$utm_campaign', '$utm_term', '$utm_content', '$visited_at', '$iphash', '$country', '$city', '$useragent')");
+        $inserted = $this->database()->execute(
+            'INSERT INTO utm (page_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, visited_at, iphash, country_name, city, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$id, $utm_source, $utm_medium, $utm_campaign, $utm_term, $utm_content, $visited_at, $iphash, $country, $city, $useragent]
+        );
+
+        if ($inserted !== true) {
+            return false;
+        }
 
         kirby()->cache('bnomei.utm.queries')->flush();
 
@@ -210,14 +217,13 @@ final class Utm
             return is_array($data) ? $data : [];
         }
 
-        $https = strval($this->option('ipstack_https'));
-        $url = $https.'://api.ipstack.com/'.$ip.'/?access_key='.$key;
+        $url = $this->ipstackUrl($ip);
         try {
             $response = Remote::get($url);
             $ipdata = $response->code() === 200 && $response->content() ?
                 (array) @json_decode($response->content(), true) :
                 [];
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             $ipdata = [
                 'ip' => $ip,
                 'hostname' => $ip,
@@ -229,6 +235,16 @@ final class Utm
         $cache->set($iphash, $ipdata, intval($this->option('ipstack_expire')));
 
         return $ipdata;
+    }
+
+    public function ipstackUrl(string $ip): string
+    {
+        $scheme = $this->option('ipstack_allow_insecure_http') === true ? 'http' : 'https';
+        $query = http_build_query([
+            'access_key' => strval($this->option('ipstack_access_key')),
+        ], '', '&', PHP_QUERY_RFC3986);
+
+        return $scheme.'://api.ipstack.com/'.rawurlencode($ip).'/?'.$query;
     }
 
     private static ?self $singleton = null;
@@ -244,9 +260,22 @@ final class Utm
 
     private function sanitize(array $params): array
     {
-        $params = array_map(fn ($param) => \SQLite3::escapeString(strip_tags($param ?? '')), $params);
+        $params = array_map(function ($param): string {
+            if (is_array($param) || is_object($param)) {
+                return '';
+            }
+
+            return strip_tags(strval($param ?? ''));
+        }, $params);
 
         return array_filter($params, fn ($param) => ! empty($param));
+    }
+
+    private function ratelimitExpire(): int
+    {
+        $expire = intval($this->option('ratelimit_expire'));
+
+        return $expire > 0 ? $expire : 60;
     }
 
     private function ratelimit(string $iphash): bool
@@ -255,27 +284,29 @@ final class Utm
             return true;
         }
 
+        $expire = $this->ratelimitExpire();
+        $trials = max(1, intval($this->option('ratelimit_trials')));
         $cache = kirby()->cache('bnomei.utm.ratelimit');
         $key = $iphash;
         $limit = $cache->get($key);
 
         // none yet or time passed
         if (! $limit ||
-            time() > $limit['time'] + intval($this->option('ratelimit_expire')) * 60) {
+            time() > $limit['time'] + $expire * 60) {
             $cache->set($key, [
                 'time' => time(),
                 'trials' => 1,
-            ]);
+            ], $expire);
 
             return true;
         }
 
         // below trial limit
-        if ($limit['trials'] < $this->option('ratelimit_trials')) {
+        if ($limit['trials'] < $trials) {
             $cache->set($key, [
                 'time' => time(),
                 'trials' => $limit['trials'] + 1,
-            ], intval($this->option('ratelimit_expire')));
+            ], $expire);
 
             return true;
         }

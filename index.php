@@ -1,5 +1,6 @@
 <?php
 
+use Bnomei\Utm;
 use Kirby\Content\Field;
 use Kirby\Filesystem\Dir;
 use Kirby\Toolkit\A;
@@ -19,7 +20,7 @@ Kirby::plugin('bnomei/utm', [
         'ipstack' => [
             'access_key' => fn () => null, // free key from https://ipstack.com/
             'expire' => 60 * 24, // in minutes
-            'https' => false, // only premium accounts can do that
+            'allowInsecureHttp' => false, // true sends IP data and access key over cleartext HTTP
         ],
         'sqlite' => [
             'file' => function () {
@@ -87,7 +88,7 @@ Kirby::plugin('bnomei/utm', [
                         $id = site()->homePage()?->id();
                     }
 
-                    \Bnomei\Utm::singleton()->track($id, [
+                    Utm::singleton()->track($id, [
                         'utm_source' => get('utm_source'),
                         'utm_medium' => get('utm_medium'),
                         'utm_campaign' => get('utm_campaign'),
@@ -110,14 +111,14 @@ Kirby::plugin('bnomei/utm', [
                     if (option('debug') !== true && $data = kirby()->cache('bnomei.utm.queries')->get($key)) {
                         return $data;
                     }
-                    $utm = \Bnomei\Utm::singleton();
-                    $query = "SELECT count(*) AS events_count, strftime('%Y/%m/%d', visited_at) AS event_day FROM utm WHERE utm_campaign='$title' AND ".\Bnomei\Utm::sqliteDateRange(
+                    $utm = Utm::singleton();
+                    $query = "SELECT count(*) AS events_count, strftime('%Y/%m/%d', visited_at) AS event_day FROM utm WHERE utm_campaign = ? AND ".Utm::sqliteDateRange(
                         intval($utm->option('stats_range')) * 2,
                         0,
                         'visited_at'
                     ).' GROUP BY event_day ORDER BY event_day asc';
 
-                    $events = $utm->database()->query($query);
+                    $events = $utm->database()->query($query, [$title]);
                     if ($events->count() === 0) {
                         return [];
                     }

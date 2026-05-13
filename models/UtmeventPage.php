@@ -2,19 +2,21 @@
 
 declare(strict_types=1);
 
+use Bnomei\Utm;
 use Kirby\Cms\Page;
 use Kirby\Toolkit\A;
+use Kirby\Uuid\Uuid;
 
 class UtmeventPage extends Page
 {
     public function __construct(array $props)
     {
         $title = $props['content']['title'];
-        $query = "SELECT * FROM utm WHERE id='$title'";
+        $query = 'SELECT * FROM utm WHERE id = ?';
 
         // NOTE: adding a cache here does not help
 
-        $data = \Bnomei\Utm::singleton()->database()->query($query);
+        $data = Utm::singleton()->database()->query($query, [$title]);
 
         $props['content'] = array_merge(
             $props['content'],
@@ -36,7 +38,7 @@ class UtmeventPage extends Page
         parent::__construct($props);
     }
 
-    public function uuid(): ?\Kirby\Uuid\Uuid
+    public function uuid(): ?Uuid
     {
         return null;
     }

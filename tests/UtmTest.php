@@ -2,23 +2,41 @@
 
 declare(strict_types=1);
 
+use Bnomei\Utm;
+use Faker\Factory;
+
 require_once __DIR__.'/../vendor/autoload.php';
 test('instance', function () {
-    $utm = new \Bnomei\Utm;
+    $utm = new Utm;
 
-    expect($utm)->toBeInstanceOf(\Bnomei\Utm::class);
+    expect($utm)->toBeInstanceOf(Utm::class);
 });
 
 test('option', function () {
-    $utm = new \Bnomei\Utm(['debug' => true]);
+    $utm = new Utm(['debug' => true]);
 
     expect($utm->option('debug'))->toBeTrue();
+});
+
+test('ipstack URL uses HTTPS by default and encodes inputs', function () {
+    $utm = new Utm([
+        'ipstack_access_key' => 'key with /?&',
+    ]);
+
+    expect($utm->ipstackUrl('2001:db8::1'))->toBe('https://api.ipstack.com/2001%3Adb8%3A%3A1/?access_key=key%20with%20%2F%3F%26');
+
+    $insecure = new Utm([
+        'ipstack_access_key' => 'key',
+        'ipstack_allow_insecure_http' => true,
+    ]);
+
+    expect(substr($insecure->ipstackUrl('127.0.0.1'), 0, 7))->toBe('http://');
 });
 
 test('track', function () {
     $id = page('home')->id();
 
-    $utm = new \Bnomei\Utm([
+    $utm = new Utm([
         'ip' => '169.150.197.101',
         'ipstack_access_key' => F::read(__DIR__.'/.ipstackkey'),
     ]);
@@ -37,7 +55,7 @@ test('track', function () {
 });
 
 test('rate limit', function () {
-    $utm = new \Bnomei\Utm([
+    $utm = new Utm([
         'ratelimit_trials' => 5,
         'ip' => '123.123.123.123', // different ip than other tests because of ratelimit
     ]);
@@ -64,9 +82,54 @@ test('rate limit', function () {
     ]))->toBeFalse();
 });
 
+test('rate limit uses configured expire window', function () {
+    $ip = '203.0.113.60';
+    $utm = new Utm([
+        'ratelimit_trials' => 1,
+        'ip' => $ip,
+    ]);
+
+    flushUtmTestState($utm);
+
+    expect($utm->option('ratelimit_expire'))->toBe(60);
+
+    kirby()->cache('bnomei.utm.ratelimit')->set(utmTestIphash($ip), [
+        'time' => time() - 2,
+        'trials' => 1,
+    ], 60);
+
+    expect($utm->track('home', [
+        'utm_source' => 'UTM_SOURCE',
+    ]))->toBeFalse();
+});
+
+test('track stores SQL control strings as literal values', function () {
+    $utm = new Utm([
+        'ratelimit_trials' => 999999,
+        'ip' => '203.0.113.61',
+    ]);
+
+    flushUtmTestState($utm);
+
+    $id = "home', 'x', 'x', 'x', 'x', 'x', '2000-01-01 00:00:00', 'forged', 'Injected', 'City', 'desktop') --";
+    $campaign = "launch' OR 1=1 --";
+
+    expect($utm->track($id, [
+        'utm_source' => "source' OR 1=1 --",
+        'utm_campaign' => $campaign,
+    ]))->toBeTrue();
+
+    $row = $utm->database()->query('SELECT page_id, utm_source, utm_campaign, iphash, country_name FROM utm ORDER BY ID DESC LIMIT 1')->first();
+
+    expect($row->page_id)->toBe($id);
+    expect($row->utm_campaign)->toBe($campaign);
+    expect($row->iphash)->not->toBe('forged');
+    expect($row->country_name)->not->toBe('Injected');
+});
+
 test('many events', function () {
-    $faker = Faker\Factory::create('en');
-    $utm = new \Bnomei\Utm([
+    $faker = Factory::create('en');
+    $utm = new Utm([
         'ratelimit_trials' => 999999, // allow mass creation
     ]);
 
@@ -148,4 +211,16 @@ function createEvent($utm, $faker, $day)
         'utm_term' => $faker->word,
         'utm_content' => '',
     ]);
+}
+
+function flushUtmTestState($utm): void
+{
+    $utm->database()->execute('DELETE FROM utm WHERE id > 0');
+    kirby()->cache('bnomei.utm.ratelimit')->flush();
+    kirby()->cache('bnomei.utm.queries')->flush();
+}
+
+function utmTestIphash(string $ip): string
+{
+    return sha1(dirname(__DIR__).'/classes'.$ip);
 }

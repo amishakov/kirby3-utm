@@ -7,6 +7,7 @@ use Kirby\Cms\Page;
 use Kirby\Cms\Pages;
 use Kirby\Toolkit\A;
 use Kirby\Toolkit\Str;
+use Kirby\Uuid\Uuid;
 
 class UtmcampaignPage extends Page
 {
@@ -18,37 +19,38 @@ class UtmcampaignPage extends Page
         if ($title === 'undefined') {
             $title = '';
         }
-        $query = "SELECT count(*) as events_count, MAX(visited_at) as visited_at, count(distinct(iphash)) AS unique_visitors FROM utm WHERE utm_campaign='$title'";
-        $key = md5($query).'-campaign';
+        $query = 'SELECT count(*) as events_count, MAX(visited_at) as visited_at, count(distinct(iphash)) AS unique_visitors FROM utm WHERE utm_campaign = ?';
+        $bindings = [$title];
+        $key = md5($query."\0".$title).'-campaign';
         $cache = kirby()->cache('bnomei.utm.queries');
         if ($propsCache = $cache->get($key)) {
             // will call parent::__construct($props) later
         } else {
-            $utm = \Bnomei\Utm::singleton();
-            $data = $utm->database()->query($query);
+            $utm = Utm::singleton();
+            $data = $utm->database()->query($query, $bindings);
             $dataRecent = $utm->database()->query($query.' AND '.Utm::sqliteDateRange(
                 intval($utm->option('stats_range')),
                 0,
                 'visited_at'
-            ));
+            ), $bindings);
             $dataCompare = $utm->database()->query($query.' AND '.Utm::sqliteDateRange(
                 intval($utm->option('stats_range')) * 2,
                 intval($utm->option('stats_range')),
                 'visited_at'
-            ));
+            ), $bindings);
 
-            $ua_query = "SELECT user_agent, count(*) AS count FROM utm WHERE utm_campaign='$title'";
-            $ua = $utm->database()->query($ua_query.' GROUP BY user_agent');
+            $ua_query = 'SELECT user_agent, count(*) AS count FROM utm WHERE utm_campaign = ?';
+            $ua = $utm->database()->query($ua_query.' GROUP BY user_agent', $bindings);
             $ua_queryRecent = $utm->database()->query($ua_query.' AND '.Utm::sqliteDateRange(
                 intval($utm->option('stats_range')),
                 0,
                 'visited_at'
-            ).' GROUP BY user_agent');
+            ).' GROUP BY user_agent', $bindings);
             $ua_queryCompare = $utm->database()->query($ua_query.' AND '.Utm::sqliteDateRange(
                 intval($utm->option('stats_range')) * 2,
                 intval($utm->option('stats_range')),
                 'visited_at'
-            ).' GROUP BY user_agent');
+            ).' GROUP BY user_agent', $bindings);
 
             $propsCache = [
                 'events_count' => $data->first()->events_count,
@@ -75,7 +77,7 @@ class UtmcampaignPage extends Page
         parent::__construct($props);
     }
 
-    public function uuid(): ?\Kirby\Uuid\Uuid
+    public function uuid(): ?Uuid
     {
         return null;
     }
@@ -123,10 +125,10 @@ class UtmcampaignPage extends Page
                 ],
             ];
 
-            $db = \Bnomei\Utm::singleton()->database();
+            $db = Utm::singleton()->database();
 
             $sources = [];
-            $data = $db->query("SELECT distinct(utm_source) AS title, count(*) as count FROM utm WHERE utm_campaign='$title' GROUP BY utm_source ORDER BY count desc LIMIT 5");
+            $data = $db->query('SELECT distinct(utm_source) AS title, count(*) as count FROM utm WHERE utm_campaign = ? GROUP BY utm_source ORDER BY count desc LIMIT 5', [$title]);
             foreach ($data as $source) {
                 if (empty($source->title)) {
                     continue;
@@ -139,7 +141,7 @@ class UtmcampaignPage extends Page
             $reports['source'] = $sources;
 
             $mediums = [];
-            $data = $db->query("SELECT distinct(utm_medium) AS title, count(*) as count FROM utm WHERE utm_campaign='$title' GROUP BY utm_medium ORDER BY count desc LIMIT 5");
+            $data = $db->query('SELECT distinct(utm_medium) AS title, count(*) as count FROM utm WHERE utm_campaign = ? GROUP BY utm_medium ORDER BY count desc LIMIT 5', [$title]);
             foreach ($data as $medium) {
                 if (empty($medium->title)) {
                     continue;
@@ -152,7 +154,7 @@ class UtmcampaignPage extends Page
             $reports['medium'] = $mediums;
 
             $countrys = [];
-            $data = $db->query("SELECT distinct(country_name) AS title, count(*) as count FROM utm WHERE utm_campaign='$title' GROUP BY country_name ORDER BY count desc LIMIT 5");
+            $data = $db->query('SELECT distinct(country_name) AS title, count(*) as count FROM utm WHERE utm_campaign = ? GROUP BY country_name ORDER BY count desc LIMIT 5', [$title]);
             foreach ($data as $country) {
                 if (empty($country->title)) {
                     continue;
@@ -165,7 +167,7 @@ class UtmcampaignPage extends Page
             $reports['country'] = $countrys;
 
             $citys = [];
-            $data = $db->query("SELECT distinct(city) AS title, count(*) as count FROM utm WHERE utm_campaign='$title' GROUP BY city ORDER BY count desc LIMIT 5");
+            $data = $db->query('SELECT distinct(city) AS title, count(*) as count FROM utm WHERE utm_campaign = ? GROUP BY city ORDER BY count desc LIMIT 5', [$title]);
             foreach ($data as $city) {
                 if (empty($city->title)) {
                     continue;
@@ -192,7 +194,7 @@ class UtmcampaignPage extends Page
         $children = [];
         $db = Utm::singleton()->database();
 
-        $results = $db->query("SELECT id as title FROM utm WHERE utm_campaign='".$this->title()->value()."'");
+        $results = $db->query('SELECT id as title FROM utm WHERE utm_campaign = ?', [$this->title()->value()]);
         if (! $results) {
             return [];
         }
