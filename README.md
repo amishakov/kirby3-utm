@@ -83,9 +83,9 @@ return [
 | bnomei.utm.        | Default | Description                                                                                |
 |--------------------|---------|--------------------------------------------------------------------------------------------|
 | enabled            | `true`  |                                                                                            |
-| cache.ipstack      | `true`  | seperate cache for ip data, expires at `ipstack.expire`                                    |
-| cache.ratelimit    | `true`  | seperate cache for ratelimit, expires at `ratelimit.expire`                                |
-| cache.queries      | `true`  | seperate cache for most queries used in panel, flushes automatically with each event tracked |
+| cache.ipstack      | `true`  | separate cache for ip data, expires at `ipstack.expire`                                    |
+| cache.ratelimit    | `true`  | separate cache for ratelimit, expires at `ratelimit.expire`                                |
+| cache.queries      | `true`  | separate cache for most queries used in panel, flushes automatically with each event tracked |
 | ipstack.access_key | `null`  | string. access key                                                                         |
 | ipstack.allowInsecureHttp | `false` | boolean. if `true`, ipstack lookups use cleartext HTTP. Keep disabled unless your account cannot use HTTPS. |
 | ipstack.expire     | `60*24` | int. cache in minutes for ipstack IP resolution.                                           |
